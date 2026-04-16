@@ -1,0 +1,8 @@
+go
+int x = 1 :
+{ int x1 = 1 :
+  scan x :
+  set x1 = x + 2 :
+  output x :
+}
+exit

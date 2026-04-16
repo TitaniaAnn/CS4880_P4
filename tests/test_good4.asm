@@ -1,0 +1,10 @@
+READ x
+LOAD x
+STORE t0
+WRITE t0
+STOP
+x 1
+x1 1
+x2 2
+x3 2
+t0 0

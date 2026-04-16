@@ -1,0 +1,8 @@
+go
+int x = 1
+  x1 = 2 :
+{ scan x :
+  cond [ x ?ge 0 ]
+  output x :
+}
+exit

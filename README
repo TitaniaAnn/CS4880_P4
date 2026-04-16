@@ -1,0 +1,134 @@
+P4 - Code Generation
+CS 4880 Compiler Design
+
+DESCRIPTION
+    Extends P3 by adding a code generation pass after static semantic analysis.
+    The program is parsed into a tree, semantically checked, then the tree is
+    walked to emit VM assembly targeting a single-accumulator stack machine.
+
+    Output is written to basename.asm when a file argument is given, or to
+    stdout when reading from stdin.
+
+    Lex-only mode (-l flag) emits one line per token instead of running
+    the parser, semantic analysis, or code generation.
+
+BUILD
+    make
+    make clean
+
+    Manual (gcc required):
+        gcc -Wall -Wextra -pedantic -std=c11 -g -c lexer.c
+        gcc -Wall -Wextra -pedantic -std=c11 -g -c tree.c
+        gcc -Wall -Wextra -pedantic -std=c11 -g -c parser.c
+        gcc -Wall -Wextra -pedantic -std=c11 -g -c semantics.c
+        gcc -Wall -Wextra -pedantic -std=c11 -g -c codegen.c
+        gcc -Wall -Wextra -pedantic -std=c11 -g -c P4.c
+        gcc -Wall -Wextra -pedantic -std=c11 -g -o P4 P4.o parser.o semantics.o codegen.o tree.o lexer.o
+
+RUN
+    ./P4 basename        reads basename.ext, writes basename.asm
+    ./P4 < file.ext      reads from stdin, writes assembly to stdout
+    ./P4                 reads from stdin (type input, Ctrl+D to end)
+
+    ./P4 -l basename     lex-only mode: prints tokens instead of compiling
+    ./P4 -l < file.ext
+
+ERROR / WARNING FORMAT
+    LEXICAL ERROR: <detail> line <n>
+    SYNTAX ERROR: expected <X>, got '<Y>' (line <n>)
+    SEMANTIC ERROR: '<name>' declared more than once
+    SEMANTIC ERROR: '<name>' used but not defined
+    WARNING: '<name>' defined but never used
+
+GRAMMAR
+    <program>    -> go <vars> <block> exit
+    <vars>       -> empty | int identifier = integer <varList> :
+    <varList>    -> identifier = integer <varList> | empty
+    <block>      -> { <vars> <stats> }
+    <stats>      -> <stat> <mStat>
+    <mStat>      -> empty | <stat> <mStat>
+    <stat>       -> <read> | <print> | <block> | <cond> | <loop> | <assign>
+    <read>       -> scan identifier :
+    <print>      -> output <exp> :
+    <cond>       -> cond [ identifier <relational> <exp> ] <stat>
+    <loop>       -> loop [ identifier <relational> <exp> ] <stat>
+    <assign>     -> set identifier = <exp> :
+    <relational> -> ?le | ?ge | ?lt | ?gt | ?ne | ?eq | = = | ;
+    <exp>        -> <M> ** <exp> | <M> // <exp> | <M>
+    <M>          -> <N> + <M> | <N>
+    <N>          -> <R> - <N> | - <N> | <R>
+    <R>          -> ( <exp> ) | identifier | integer
+
+TOKEN TYPES (lexer)
+    IDTk      identifier: starts with 'x', followed by letters/digits/underscores, max 8 chars
+    IntTk     integer: decimal digits only, max 8 digits
+    KW_tk     keyword: go og loop int exit scan output cond then set func program
+    OpTk      multi-char operator: ?le ?ge ?lt ?gt ?ne ?eq ** //
+    OpDelTk   single-char operator or delimiter: + - : ; = ( ) { } [ ]
+    EOFTk     end of input
+
+    Comments (@text@) are consumed silently; no whitespace allowed inside.
+
+VM TARGET LANGUAGE
+    Single-accumulator assembly. All values end up in ACC after expression
+    evaluation. Storage is global; variables and compiler temporaries are
+    emitted as storage directives after the STOP instruction.
+
+    Instruction set used:
+        LOAD  arg       ACC = arg (variable name or integer literal)
+        STORE var       var = ACC
+        ADD   arg       ACC = ACC + arg
+        SUB   arg       ACC = ACC - arg
+        MULT  arg       ACC = ACC * arg
+        DIV   arg       ACC = ACC / arg
+        READ  var       var = keyboard input
+        WRITE arg       print arg to output
+        BR    label     unconditional jump
+        BRNEG label     branch if ACC < 0
+        BRZNEG label    branch if ACC <= 0
+        BRPOS label     branch if ACC > 0
+        BRZPOS label    branch if ACC >= 0
+        BRZERO label    branch if ACC == 0
+        NOOP            no operation
+        STOP            end program
+
+    Output file format:
+        [instructions]
+        STOP
+        varname initialvalue    (one per user variable and compiler temporary)
+
+    Compiler temporaries are named t0, t1, t2, ...
+    Branch labels are named L0, L1, L2, ...
+
+TEST FILES
+    tests/test_good*.ext   syntactically and semantically valid programs
+    tests/test_bad*.ext    programs with syntax errors
+    tests/p3gg*.ext        semantic good cases (no errors or expected warnings)
+    tests/p3gb*.ext        semantic bad cases (duplicate def, undefined use, unused var)
+
+EXAMPLE
+    Input (tests/test_good5.ext):
+        go
+        int x = 1 :
+        { int x1 = 1 :
+          scan x :
+          set x1 = x + 2 :
+          output x1 :
+        }
+        exit
+
+    Output (tests/test_good5.asm):
+        READ x
+        LOAD x
+        STORE t0
+        LOAD 2
+        ADD t0
+        STORE x1
+        LOAD x1
+        STORE t1
+        WRITE t1
+        STOP
+        x 1
+        x1 1
+        t0 0
+        t1 0

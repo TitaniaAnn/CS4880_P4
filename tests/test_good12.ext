@@ -1,0 +1,8 @@
+go @startofprogram@
+int x = 10 :
+{ scan x :
+  output x ** 2 :
+  output x // 3 :
+  output - x :
+}
+exit

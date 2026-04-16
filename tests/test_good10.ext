@@ -1,0 +1,9 @@
+go
+int x = 0
+  x1 = 1 :
+{ scan x :
+  cond [ x ?ge 0 ]
+  cond [ x ?lt 10 ** 10 ]
+  output x :
+}
+exit

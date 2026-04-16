@@ -1,0 +1,4 @@
+go
+{ int x = 1 :
+}
+exit

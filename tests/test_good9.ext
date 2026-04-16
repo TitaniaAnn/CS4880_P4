@@ -1,0 +1,10 @@
+go
+int x = 1
+  x1 = 2 :
+{ scan x :
+  loop [ x ?ge 0 ]
+  { int x2 = 0 :
+    output x :
+  }
+}
+exit

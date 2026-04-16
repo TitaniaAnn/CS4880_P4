@@ -1,0 +1,9 @@
+go
+int x = 1
+  x1 = 1 :
+{ int x2 = 2
+  x3 = 2 :
+  scan x1 :
+  output x1 + x2 + x3 + x4 :
+}
+exit

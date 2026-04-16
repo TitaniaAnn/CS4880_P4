@@ -1,0 +1,4 @@
+go
+{ output 1 ;
+}
+exit

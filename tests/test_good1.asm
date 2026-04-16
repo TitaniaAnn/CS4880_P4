@@ -1,0 +1,5 @@
+LOAD 1
+STORE t0
+WRITE t0
+STOP
+t0 0

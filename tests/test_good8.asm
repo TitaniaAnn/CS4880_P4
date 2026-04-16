@@ -1,0 +1,15 @@
+READ x
+LOAD 0
+STORE t0
+LOAD x
+SUB t0
+BRNEG L0
+LOAD x
+STORE t1
+WRITE t1
+L0: NOOP
+STOP
+x 1
+x1 2
+t0 0
+t1 0

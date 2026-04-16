@@ -1,0 +1,6 @@
+go
+{ int x = 1 :
+  scan x :
+  output x :
+}
+exit
