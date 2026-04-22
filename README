@@ -100,6 +100,12 @@ VM TARGET LANGUAGE
     Compiler temporaries are named t0, t1, t2, ...
     Branch labels are named L0, L1, L2, ...
 
+AI USE
+    Claude Code (Anthropic) was used as a coding assistant during development
+    of this project. AI assistance was used to help with implementation,
+    debugging, and documentation. All code was reviewed and understood by
+    the author.
+
 TEST FILES
     tests/test_good*.ext   syntactically and semantically valid programs
     tests/test_bad*.ext    programs with syntax errors
