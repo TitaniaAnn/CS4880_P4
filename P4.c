@@ -42,7 +42,7 @@ int main(int argc, char *argv[])
     }
 
     if (argc - argStart > 1)
-        exitError("Usage: P3 [-l] [basename]");
+        exitError("Usage: P4 [-l] [basename]");
 
     if (argc == argStart) {
         in = stdin;
