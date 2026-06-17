@@ -11,15 +11,17 @@ const char * const tokenNames[] = {
     "IDTk", "IntTk", "KW_tk", "OpTk", "OpDelTk", "EOFTk"
 };
 
-static FILE *src     = NULL;
-static int   lineNum = 1;
+static FILE *src     = NULL;   /* current source stream */
+static int   lineNum = 1;      /* current line, kept in sync by next/pushBack */
 
+/* Bind the lexer to an open file and reset the line counter. */
 void lexer_init(FILE *fp)
 {
     src     = fp;
     lineNum = 1;
 }
 
+/* Read one character, advancing the line counter on newlines. */
 static int nextChar(void)
 {
     int c = fgetc(src);
@@ -28,6 +30,8 @@ static int nextChar(void)
     return c;
 }
 
+/* Return a character to the stream; undo the line bump if it was a newline
+   so lineNum stays accurate across one char of lookahead. */
 static void pushBack(int c)
 {
     if (c == '\n')
@@ -47,6 +51,7 @@ static const char * const keywords[] = {
     NULL
 };
 
+/* True if `s` is one of the reserved words above. */
 static int isKeyword(const char *s)
 {
     int i;
@@ -56,6 +61,7 @@ static int isKeyword(const char *s)
     return 0;
 }
 
+/* True for the single-character operators and delimiters of the language. */
 static int isSingleCharOp(int c)
 {
     return c == '+' || c == '-' || c == ':' || c == ';' ||
@@ -63,6 +69,7 @@ static int isSingleCharOp(int c)
            c == '}' || c == '[' || c == ']';
 }
 
+/* Build a Token value, copying the text in bounded and NUL-terminated. */
 static Token makeToken(tokenID id, const char *instance, int line)
 {
     Token t;
@@ -112,26 +119,26 @@ restart:
     if (isalpha(c)) {
         len = 0;
         buf[len++] = (char)c;
-        while (1) {
+        while (1) {                                 /* gather word chars */
             int c2 = nextChar();
             if (isalpha(c2) || isdigit(c2) || c2 == '_') {
                 if (len < TOKEN_INSTANCE_MAX - 1)
                     buf[len++] = (char)c2;
-                else {
+                else {                              /* over 8 significant chars */
                     buf[len] = '\0';
                     lexError("identifier or keyword exceeds 8 characters");
                 }
             } else {
-                pushBack(c2);
+                pushBack(c2);                       /* not part of the word */
                 break;
             }
         }
         buf[len] = '\0';
 
-        if (isKeyword(buf))
+        if (isKeyword(buf))                         /* reserved word wins */
             return makeToken(KW_tk, buf, tokenLine);
 
-        if (buf[0] != 'x') {
+        if (buf[0] != 'x') {                        /* identifiers must start with 'x' */
             char msg[64];
             snprintf(msg, sizeof(msg), "invalid identifier '%s'", buf);
             lexError(msg);
@@ -139,16 +146,16 @@ restart:
         return makeToken(IDTk, buf, tokenLine);
     }
 
-    /* Digit: integer */
+    /* Digit: integer literal */
     if (isdigit(c)) {
         len = 0;
         buf[len++] = (char)c;
-        while (1) {
+        while (1) {                                 /* gather digits */
             int c2 = nextChar();
             if (isdigit(c2)) {
                 if (len < TOKEN_INSTANCE_MAX - 1)
                     buf[len++] = (char)c2;
-                else {
+                else {                              /* over 8 digits */
                     buf[len] = '\0';
                     lexError("integer exceeds 8 digits");
                 }
@@ -161,7 +168,7 @@ restart:
         return makeToken(IntTk, buf, tokenLine);
     }
 
-    /* '?': multi-char operator ?le ?ge ?lt ?gt ?ne ?eq */
+    /* '?': introduces a 3-char relational operator ?le ?ge ?lt ?gt ?ne ?eq */
     if (c == '?') {
         int c2 = nextChar();
         int c3;
@@ -170,7 +177,7 @@ restart:
         c3 = nextChar();
         if (c3 == EOF)
             lexError("incomplete operator after '?'");
-        buf[0] = '?';
+        buf[0] = '?';                               /* assemble the 3 chars */
         buf[1] = (char)c2;
         buf[2] = (char)c3;
         buf[3] = '\0';
@@ -185,7 +192,7 @@ restart:
         }
     }
 
-    /* '*': must be '**' */
+    /* '*': only valid doubled as '**' (multiplication) */
     if (c == '*') {
         int c2 = nextChar();
         if (c2 == '*')
@@ -194,7 +201,7 @@ restart:
         lexError("bare '*' is not a valid token");
     }
 
-    /* '/': must be '//' */
+    /* '/': only valid doubled as '//' (integer division) */
     if (c == '/') {
         int c2 = nextChar();
         if (c2 == '/')
@@ -203,7 +210,7 @@ restart:
         lexError("bare '/' is not a valid token");
     }
 
-    /* Single-char operators and delimiters */
+    /* Single-char operators and delimiters: + - : ; = ( ) { } [ ] */
     if (isSingleCharOp(c)) {
         buf[0] = (char)c;
         buf[1] = '\0';

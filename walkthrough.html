@@ -1,0 +1,1487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CS 4880 P4 — Compiler Walkthrough</title>
+<style>
+  :root {
+    --bg:       #0f1117;
+    --surface:  #1a1d27;
+    --border:   #2e3147;
+    --accent:   #7c6fcd;
+    --accent2:  #56b6c2;
+    --accent3:  #e5c07b;
+    --accent4:  #e06c75;
+    --accent5:  #98c379;
+    --text:     #abb2bf;
+    --text-hi:  #dde1eb;
+    --kw:       #c678dd;
+    --str:      #98c379;
+    --num:      #d19a66;
+    --cmt:      #5c6370;
+    --fn:       #61afef;
+    --op:       #56b6c2;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.7;
+    display: flex;
+  }
+
+  /* ── Sidebar nav ── */
+  nav {
+    width: 260px;
+    min-width: 260px;
+    height: 100vh;
+    position: sticky;
+    top: 0;
+    overflow-y: auto;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 24px 0;
+  }
+
+  nav h2 {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    padding: 0 20px 8px;
+    margin-bottom: 4px;
+  }
+
+  nav ul { list-style: none; }
+  nav ul ul { padding-left: 12px; }
+
+  nav a {
+    display: block;
+    padding: 5px 20px;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 13px;
+    border-left: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  nav a:hover {
+    color: var(--text-hi);
+    border-left-color: var(--accent);
+  }
+
+  nav .section-head {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-hi);
+    margin-top: 14px;
+    padding: 4px 20px 2px;
+  }
+
+  /* ── Main content ── */
+  main {
+    flex: 1;
+    max-width: 960px;
+    padding: 48px 48px 80px;
+    overflow-x: hidden;
+  }
+
+  h1 {
+    font-size: 2rem;
+    color: var(--text-hi);
+    margin-bottom: 6px;
+  }
+
+  .subtitle {
+    color: var(--accent);
+    font-size: 13px;
+    letter-spacing: 0.05em;
+    margin-bottom: 40px;
+  }
+
+  h2 {
+    font-size: 1.4rem;
+    color: var(--text-hi);
+    margin: 48px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  h3 {
+    font-size: 1.1rem;
+    color: var(--accent2);
+    margin: 28px 0 10px;
+  }
+
+  h4 {
+    font-size: 0.95rem;
+    color: var(--accent3);
+    margin: 20px 0 8px;
+  }
+
+  p { margin-bottom: 12px; }
+
+  /* ── Doc-link callout ── */
+  .docref {
+    background: #1e2236;
+    border-left: 3px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    padding: 10px 16px;
+    margin: 16px 0;
+    font-size: 13px;
+  }
+
+  .docref strong {
+    color: var(--accent);
+    display: block;
+    margin-bottom: 4px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  /* ── Warning / note callout ── */
+  .note {
+    background: #1e2920;
+    border-left: 3px solid var(--accent5);
+    border-radius: 0 6px 6px 0;
+    padding: 10px 16px;
+    margin: 16px 0;
+    font-size: 13px;
+  }
+  .note strong { color: var(--accent5); }
+
+  .warn {
+    background: #221e1e;
+    border-left: 3px solid var(--accent4);
+    border-radius: 0 6px 6px 0;
+    padding: 10px 16px;
+    margin: 16px 0;
+    font-size: 13px;
+  }
+  .warn strong { color: var(--accent4); }
+
+  /* ── Code blocks ── */
+  pre {
+    background: #13151e;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    overflow-x: auto;
+    margin: 14px 0;
+    font-size: 13px;
+    line-height: 1.6;
+    tab-size: 4;
+  }
+
+  code { font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; }
+  pre code { color: var(--text); }
+
+  /* Inline code */
+  :not(pre) > code {
+    background: #1e2236;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 0.88em;
+    color: var(--accent2);
+  }
+
+  /* Syntax colouring (manual spans) */
+  .kw  { color: var(--kw); font-weight: 600; }
+  .fn  { color: var(--fn); }
+  .str { color: var(--str); }
+  .num { color: var(--num); }
+  .cmt { color: var(--cmt); font-style: italic; }
+  .op  { color: var(--op); }
+  .pp  { color: #c678dd; } /* preprocessor */
+  .asm-label { color: var(--accent3); font-weight: 600; }
+  .asm-instr { color: var(--fn); }
+  .asm-op    { color: var(--accent2); }
+
+  /* ── Pipeline diagram ── */
+  .pipeline {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex-wrap: wrap;
+    margin: 20px 0;
+    font-size: 13px;
+  }
+
+  .pipe-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 16px;
+    text-align: center;
+    min-width: 110px;
+  }
+
+  .pipe-box .file { color: var(--cmt); font-size: 11px; margin-top: 2px; }
+  .pipe-box .name { color: var(--text-hi); font-weight: 600; }
+  .pipe-box.new   { border-color: var(--accent); background: #1e1e38; }
+  .pipe-box.new .name { color: var(--accent); }
+
+  .pipe-arrow {
+    color: var(--border);
+    font-size: 20px;
+    padding: 0 4px;
+  }
+
+  /* ── Two-column layout for side-by-side examples ── */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 14px 0;
+  }
+
+  .two-col pre { margin: 0; }
+  .col-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--cmt);
+    margin-bottom: 4px;
+  }
+
+  /* ── Symbol table viz ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 14px 0;
+  }
+
+  th {
+    background: var(--surface);
+    color: var(--text-hi);
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  td {
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+  }
+
+  tr:hover td { background: #1a1d27; }
+
+  /* ── Section anchors ── */
+  section { scroll-margin-top: 20px; }
+
+  a.anchor-link {
+    color: inherit;
+    text-decoration: none;
+  }
+  a.anchor-link:hover { text-decoration: underline; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+
+  .badge {
+    display: inline-block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    color: var(--accent2);
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════ SIDEBAR ═══════════════════════════ -->
+<nav>
+  <h2>CS 4880 P4 Walkthrough</h2>
+
+  <div class="section-head">Overview</div>
+  <ul>
+    <li><a href="#intro">Introduction</a></li>
+    <li><a href="#pipeline">Compiler Pipeline</a></li>
+    <li><a href="#vm">Target VM</a></li>
+  </ul>
+
+  <div class="section-head">Modules</div>
+  <ul>
+    <li><a href="#token">token.h — Token Types</a></li>
+    <li><a href="#lexer">lexer.c — Tokenizer</a></li>
+    <li><a href="#tree">tree.h/c — AST Nodes</a></li>
+    <li><a href="#parser">parser.c — Parser</a></li>
+    <li><a href="#semantics">semantics.c — Analysis</a></li>
+    <li><a href="#codegen">codegen.c — Code Gen</a>
+      <ul>
+        <li><a href="#cg-state">Module State</a></li>
+        <li><a href="#cg-temps">Temporaries</a></li>
+        <li><a href="#cg-labels">Labels</a></li>
+        <li><a href="#cg-vars">Variable Collection</a></li>
+        <li><a href="#cg-expr">Expression Generation</a></li>
+        <li><a href="#cg-relop">Relational Branches</a></li>
+        <li><a href="#cg-dispatch">Statement Dispatch</a></li>
+        <li><a href="#cg-storage">Storage Layout</a></li>
+      </ul>
+    </li>
+    <li><a href="#driver">P4.c — Driver</a></li>
+  </ul>
+
+  <div class="section-head">Examples</div>
+  <ul>
+    <li><a href="#ex-output">Print a Literal</a></li>
+    <li><a href="#ex-arith">Arithmetic</a></li>
+    <li><a href="#ex-cond">Conditional</a></li>
+    <li><a href="#ex-loop">Loop</a></li>
+    <li><a href="#ex-equality">Equality (= =)</a></li>
+  </ul>
+
+  <div class="section-head">Reference</div>
+  <ul>
+    <li><a href="#grammar">Grammar Reference</a></li>
+    <li><a href="#instset">VM Instruction Set</a></li>
+    <li><a href="#errors">Error Messages</a></li>
+  </ul>
+</nav>
+
+<!-- ═══════════════════════════ CONTENT ═══════════════════════════ -->
+<main>
+
+<h1>CS 4880 P4 — Compiler Walkthrough</h1>
+<div class="subtitle">CMP_SCI 4880 · Compiler Design · Code Generation Project</div>
+
+<!-- ══════════════ INTRODUCTION ══════════════ -->
+<section id="intro">
+<h2>Introduction</h2>
+
+<p>
+  This project implements a complete compiler for a small imperative language called <strong>EXT</strong>
+  (source files use the <code>.ext</code> extension). The compiler translates EXT source code into
+  assembly for a simple accumulator-based virtual machine (VM). The pipeline was built incrementally across
+  four projects: P1 (lexer), P2 (parser), P3 (static semantics), and P4 (code generation).
+</p>
+
+<p>
+  The codebase has six C source files plus headers, each responsible for exactly one compiler phase.
+  The entry point is <code>P4.c</code>; it wires all phases together and drives the overall process.
+</p>
+
+<div class="docref">
+  <strong>Project Spec → docs/Projects View_ P4_*.pdf</strong>
+  The assignment spec defines what the EXT language looks like, what the expected output format is,
+  and grading criteria. Every grammar rule, token constraint, and error message format in this code
+  traces directly to that spec.
+</div>
+</section>
+
+<!-- ══════════════ PIPELINE ══════════════ -->
+<section id="pipeline">
+<h2>Compiler Pipeline</h2>
+
+<div class="pipeline">
+  <div class="pipe-box">
+    <div class="name">Source</div>
+    <div class="file">*.ext</div>
+  </div>
+  <div class="pipe-arrow">→</div>
+  <div class="pipe-box">
+    <div class="name">Lexer</div>
+    <div class="file">lexer.c</div>
+  </div>
+  <div class="pipe-arrow">→</div>
+  <div class="pipe-box">
+    <div class="name">Parser</div>
+    <div class="file">parser.c</div>
+  </div>
+  <div class="pipe-arrow">→</div>
+  <div class="pipe-box">
+    <div class="name">Semantics</div>
+    <div class="file">semantics.c</div>
+  </div>
+  <div class="pipe-arrow">→</div>
+  <div class="pipe-box new">
+    <div class="name">CodeGen</div>
+    <div class="file">codegen.c ← P4</div>
+  </div>
+  <div class="pipe-arrow">→</div>
+  <div class="pipe-box">
+    <div class="name">Output</div>
+    <div class="file">*.asm</div>
+  </div>
+</div>
+
+<p>
+  Each phase feeds the next. The lexer produces a <strong>token stream</strong>; the parser consumes
+  that stream and builds an <strong>Abstract Syntax Tree (AST)</strong>; the semantic pass walks the
+  AST to enforce scope/type rules; code generation walks the same AST and emits VM assembly.
+  If any phase detects an error it prints a message and exits immediately — there is no error recovery.
+</p>
+</section>
+
+<!-- ══════════════ TARGET VM ══════════════ -->
+<section id="vm">
+<h2>Target VM</h2>
+
+<p>
+  The generated <code>.asm</code> files run on a register-based virtual machine that exposes one
+  accumulator register (<strong>ACC</strong>) and a flat memory of named variables. Every arithmetic
+  instruction operates on ACC and one memory location; there are no general-purpose registers.
+</p>
+
+<div class="docref">
+  <strong>VM definition → docs/VM_Language.pdf</strong>
+  Defines every instruction, its operand format, and execution semantics. All VM instructions used in
+  <code>codegen.c</code> — LOAD, STORE, ADD, SUB, MULT, DIV, READ, WRITE, STOP, BR, BRNEG, BRPOS,
+  BRZERO, BRZPOS, BRZNEG, NOOP — come directly from this document.
+</div>
+
+<p>The instruction set used by this compiler is:</p>
+
+<table>
+  <thead>
+    <tr><th>Instruction</th><th>Effect</th><th>Used for</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>LOAD x</code></td><td>ACC ← mem[x]</td><td>Load variable or integer literal</td></tr>
+    <tr><td><code>STORE x</code></td><td>mem[x] ← ACC</td><td>Save result to variable or temp</td></tr>
+    <tr><td><code>ADD x</code></td><td>ACC ← ACC + mem[x]</td><td><code>+</code> operator</td></tr>
+    <tr><td><code>SUB x</code></td><td>ACC ← ACC − mem[x]</td><td><code>-</code> operator, comparisons</td></tr>
+    <tr><td><code>MULT x</code></td><td>ACC ← ACC × mem[x]</td><td><code>**</code> operator</td></tr>
+    <tr><td><code>DIV x</code></td><td>ACC ← ACC ÷ mem[x]</td><td><code>//</code> operator</td></tr>
+    <tr><td><code>READ x</code></td><td>mem[x] ← stdin int</td><td><code>scan</code> statement</td></tr>
+    <tr><td><code>WRITE x</code></td><td>stdout ← mem[x]</td><td><code>output</code> statement</td></tr>
+    <tr><td><code>STOP</code></td><td>halt execution</td><td>end of <code>program</code> node</td></tr>
+    <tr><td><code>BR L</code></td><td>unconditional jump to label L</td><td>loop back-edge</td></tr>
+    <tr><td><code>BRNEG L</code></td><td>jump if ACC &lt; 0</td><td>relational branch</td></tr>
+    <tr><td><code>BRPOS L</code></td><td>jump if ACC &gt; 0</td><td>relational branch</td></tr>
+    <tr><td><code>BRZERO L</code></td><td>jump if ACC = 0</td><td>relational branch</td></tr>
+    <tr><td><code>BRZPOS L</code></td><td>jump if ACC ≥ 0</td><td>relational branch</td></tr>
+    <tr><td><code>BRZNEG L</code></td><td>jump if ACC ≤ 0</td><td>relational branch</td></tr>
+    <tr><td><code>NOOP</code></td><td>no operation</td><td>label targets</td></tr>
+    <tr><td><code>L: INSTR</code></td><td>attach label L to an instruction</td><td>branch targets</td></tr>
+    <tr><td><code>name val</code></td><td>declare variable with initial value</td><td>data section</td></tr>
+  </tbody>
+</table>
+
+<div class="docref">
+  <strong>Runtime semantics → docs/P4 Runtime Semantics_*.pdf</strong>
+  Explains how the VM executes each instruction at runtime, including how READ/WRITE interact with
+  I/O, how branch conditions are tested, and how the flat memory model works with named slots.
+</div>
+</section>
+
+<hr>
+
+<!-- ══════════════ TOKEN.H ══════════════ -->
+<section id="token">
+<h2>token.h — Token Types</h2>
+
+<p>
+  Every piece of the compiler that needs to talk about tokens includes this header. It defines
+  exactly three things: the <code>tokenID</code> enum, the <code>Token</code> struct, and the
+  max instance length constant.
+</p>
+
+<pre><code><span class="kw">typedef enum</span> {
+    <span class="op">IDTk</span>,      <span class="cmt">// identifier: starts with 'x', ≤8 chars</span>
+    <span class="op">IntTk</span>,     <span class="cmt">// integer literal: decimal digits, ≤8 chars</span>
+    <span class="op">KW_tk</span>,     <span class="cmt">// keyword: go og loop int exit scan output cond set...</span>
+    <span class="op">OpTk</span>,      <span class="cmt">// multi-char operator: ?le ?ge ?lt ?gt ?ne ?eq ** //</span>
+    <span class="op">OpDelTk</span>,   <span class="cmt">// single-char operator/delimiter: + - : ; = ( ) { } [ ]</span>
+    <span class="op">EOFTk</span>
+} tokenID;
+
+<span class="pp">#define TOKEN_INSTANCE_MAX 9</span>   <span class="cmt">// 8 significant chars + NUL</span>
+
+<span class="kw">typedef struct</span> {
+    <span class="op">tokenID</span>  id;
+    <span class="kw">char</span>     instance[TOKEN_INSTANCE_MAX];
+    <span class="kw">int</span>      lineNumber;
+} Token;
+</code></pre>
+
+<p>
+  The <code>instance</code> field stores the actual text of the token (e.g., <code>"xcount"</code>
+  for an identifier, <code>"42"</code> for an integer). The <code>lineNumber</code> field is used
+  to produce accurate error messages in all phases.
+</p>
+
+<div class="docref">
+  <strong>Language spec → docs/Projects View_ P4_*.pdf</strong>
+  The six token types map one-to-one to the categories defined in the spec. The 8-character
+  limit on identifiers and integers is a language-level constraint from the spec, enforced here
+  via <code>TOKEN_INSTANCE_MAX = 9</code> (8 chars + null terminator).
+</div>
+</section>
+
+<!-- ══════════════ LEXER ══════════════ -->
+<section id="lexer">
+<h2>lexer.c — Tokenizer</h2>
+
+<p>
+  The lexer reads characters from a <code>FILE*</code>, classifies them into tokens, and returns
+  one token per call to <code>getNextToken()</code>. It maintains a single line counter
+  (<code>lineNum</code>) shared across all calls.
+</p>
+
+<h3>Initialization</h3>
+<pre><code><span class="kw">static</span> FILE *src     = NULL;
+<span class="kw">static int</span>   lineNum = <span class="num">1</span>;
+
+<span class="kw">void</span> <span class="fn">lexer_init</span>(FILE *fp) {
+    src     = fp;
+    lineNum = <span class="num">1</span>;
+}
+</code></pre>
+<p>
+  <code>lexer_init</code> must be called once before any tokens are requested. The file pointer
+  and line number are kept as module-level statics so <code>getNextToken</code> doesn't need
+  parameters on every call.
+</p>
+
+<h3>Character-Level Helpers</h3>
+<pre><code><span class="kw">static int</span> <span class="fn">nextChar</span>(<span class="kw">void</span>) {
+    <span class="kw">int</span> c = <span class="fn">fgetc</span>(src);
+    <span class="kw">if</span> (c == <span class="str">'\n'</span>) lineNum++;
+    <span class="kw">return</span> c;
+}
+
+<span class="kw">static void</span> <span class="fn">pushBack</span>(<span class="kw">int</span> c) {
+    <span class="kw">if</span> (c == <span class="str">'\n'</span>) lineNum--;
+    <span class="fn">ungetc</span>(c, src);
+}
+</code></pre>
+<p>
+  All character reads go through <code>nextChar</code> so the line counter stays accurate.
+  <code>pushBack</code> mirrors <code>ungetc</code> but decrements the counter when a newline
+  is un-read, preventing double-counting. The one-character look-ahead is enough because every
+  token type is distinguishable from its first character (or first two for <code>**</code> and
+  <code>//</code>).
+</p>
+
+<h3>Comment Handling</h3>
+<pre><code><span class="kw">if</span> (c == <span class="str">'@'</span>) {
+    <span class="kw">int</span> c2;
+    <span class="kw">while</span> (<span class="num">1</span>) {
+        c2 = <span class="fn">nextChar</span>();
+        <span class="kw">if</span> (c2 == EOF)        <span class="fn">lexError</span>(<span class="str">"unterminated comment"</span>);
+        <span class="kw">if</span> (<span class="fn">isspace</span>(c2))      <span class="fn">lexError</span>(<span class="str">"whitespace inside comment"</span>);
+        <span class="kw">if</span> (c2 == <span class="str">'@'</span>)        <span class="kw">break</span>;
+    }
+    <span class="kw">goto</span> restart;   <span class="cmt">// O(1) — avoids stack growth for consecutive comments</span>
+}
+</code></pre>
+<p>
+  EXT comments are delimited by <code>@...@</code> with no internal whitespace allowed (e.g.,
+  <code>@startofprogram@</code>). After consuming the closing <code>@</code>, the code uses
+  <code>goto restart</code> rather than calling <code>getNextToken</code> recursively. A recursive
+  call would grow the call stack by one frame per comment; the <code>goto</code> resets the
+  local frame in O(1) space.
+</p>
+
+<h3>Identifier and Keyword Recognition</h3>
+<pre><code><span class="kw">if</span> (<span class="fn">isalpha</span>(c)) {
+    <span class="cmt">// ... accumulate up to 8 chars ...</span>
+    <span class="kw">if</span> (<span class="fn">isKeyword</span>(buf))
+        <span class="kw">return</span> <span class="fn">makeToken</span>(KW_tk, buf, tokenLine);
+    <span class="kw">if</span> (buf[<span class="num">0</span>] != <span class="str">'x'</span>)
+        <span class="fn">lexError</span>(<span class="str">"invalid identifier"</span>);     <span class="cmt">// must start with 'x'</span>
+    <span class="kw">return</span> <span class="fn">makeToken</span>(IDTk, buf, tokenLine);
+}
+</code></pre>
+<p>
+  The lexer first builds the full word, then checks if it is a keyword. This matters because all
+  keywords start with letters other than <code>x</code> (<code>go</code>, <code>int</code>,
+  <code>loop</code>, etc.) so a non-<code>x</code> start that isn't a keyword is a lexical error.
+  Identifiers must start with <code>x</code> — this is an unusual language constraint that
+  prevents variable names from shadowing keywords.
+</p>
+
+<h3>Multi-Character Operators</h3>
+<pre><code><span class="kw">if</span> (c == <span class="str">'?'</span>) {
+    <span class="cmt">// consumes exactly 2 more chars: e.g., ?ge ?lt</span>
+    buf[<span class="num">0</span>]='?'; buf[<span class="num">1</span>]=c2; buf[<span class="num">2</span>]=c3; buf[<span class="num">3</span>]=<span class="str">'\0'</span>;
+    <span class="kw">if</span> (valid) <span class="kw">return</span> <span class="fn">makeToken</span>(OpTk, buf, tokenLine);
+}
+
+<span class="kw">if</span> (c == <span class="str">'*'</span>) {
+    c2 = <span class="fn">nextChar</span>();
+    <span class="kw">if</span> (c2 == <span class="str">'*'</span>) <span class="kw">return</span> <span class="fn">makeToken</span>(OpTk, <span class="str">"**"</span>, tokenLine);
+    <span class="fn">pushBack</span>(c2);
+    <span class="fn">lexError</span>(<span class="str">"bare '*' is not a valid token"</span>);
+}
+</code></pre>
+<p>
+  <code>?</code>-prefixed relational operators are always exactly 3 characters. <code>**</code>
+  (multiply) and <code>//</code> (divide) are exactly 2. A bare <code>*</code> or <code>/</code>
+  is a lexical error — the language has no single-character multiply/divide.
+</p>
+</section>
+
+<!-- ══════════════ TREE ══════════════ -->
+<section id="tree">
+<h2>tree.h / tree.c — AST Nodes</h2>
+
+<p>
+  The AST is built from a single <code>Node</code> struct. Every grammar non-terminal becomes
+  one node, identified by a string <code>label</code>.
+</p>
+
+<pre><code><span class="pp">#define MAX_CHILDREN 4</span>
+
+<span class="kw">typedef struct</span> Node {
+    <span class="kw">char</span>  label[<span class="num">32</span>];           <span class="cmt">// non-terminal name: "program", "block", "exp", ...</span>
+    Token tokens[<span class="num">3</span>];           <span class="cmt">// terminal tokens attached to this node</span>
+    <span class="kw">int</span>   tokenCount;
+    <span class="kw">struct</span> Node *children[MAX_CHILDREN];
+    <span class="kw">int</span>   childCount;
+} Node;
+</code></pre>
+
+<p>
+  A node stores up to <strong>3 tokens</strong> (enough for any grammar rule — the most tokens a
+  single rule attaches is 2 for <code>vars</code>: identifier + integer). It stores up to
+  <strong>4 children</strong> (enough for <code>program → vars block</code> and similar rules).
+  The exact capacity choices come from manually counting the maximum tokens/children any
+  single grammar rule can attach.
+</p>
+
+<h3>Key Functions</h3>
+<table>
+  <thead><tr><th>Function</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>newNode(label)</code></td><td>Allocates and zero-initializes a node</td></tr>
+    <tr><td><code>addChild(parent, child)</code></td><td>Appends a child; silently ignores NULL children (for empty productions)</td></tr>
+    <tr><td><code>addToken(n, t)</code></td><td>Attaches a terminal token to a node</td></tr>
+    <tr><td><code>freeTree(n)</code></td><td>Post-order recursive free — frees children before the parent node</td></tr>
+  </tbody>
+</table>
+
+<div class="note">
+  <strong>Note:</strong> <code>addChild</code> silently skips NULL children. This is intentional —
+  grammar rules with empty productions (like <code>&lt;vars&gt; → empty</code>) return NULL from
+  the parser, and the caller passes that NULL to <code>addChild</code> without needing an
+  <code>if</code> guard at every call site.
+</div>
+</section>
+
+<!-- ══════════════ PARSER ══════════════ -->
+<section id="parser">
+<h2>parser.c — Recursive Descent Parser</h2>
+
+<p>
+  The parser implements the EXT grammar using a classic <strong>recursive descent</strong>
+  strategy: one C function per non-terminal, each returning a <code>Node*</code>.
+  It uses a single token of lookahead (<code>static Token tk</code>) and the "delay technique"
+  for right-recursive rules.
+</p>
+
+<h3>Global Lookahead Token</h3>
+<pre><code><span class="kw">static</span> Token tk;   <span class="cmt">// always holds the next unprocessed token</span>
+
+<span class="kw">static void</span> <span class="fn">consume</span>(<span class="kw">void</span>) { tk = <span class="fn">getNextToken</span>(); }
+</code></pre>
+<p>
+  Every function reads <code>tk</code> to decide which production to apply. After using a terminal
+  it calls <code>consume()</code> to advance. The parser's public entry point,
+  <code>parser()</code>, loads the first token before calling <code>program_rule()</code>.
+</p>
+
+<h3>Helper Predicates</h3>
+<pre><code><span class="kw">static int</span> <span class="fn">isKW</span>   (<span class="kw">const char</span> *kw)  { <span class="kw">return</span> tk.id == KW_tk    &amp;&amp; strcmp(tk.instance, kw) == <span class="num">0</span>; }
+<span class="kw">static int</span> <span class="fn">isOpDel</span>(<span class="kw">const char</span> *op)  { <span class="kw">return</span> tk.id == OpDelTk  &amp;&amp; strcmp(tk.instance, op) == <span class="num">0</span>; }
+<span class="kw">static int</span> <span class="fn">isOp</span>   (<span class="kw">const char</span> *op)  { <span class="kw">return</span> tk.id == OpTk     &amp;&amp; strcmp(tk.instance, op) == <span class="num">0</span>; }
+</code></pre>
+<p>
+  These small predicates make the grammar rules readable. Without them, every check would be a
+  two-part conjunction of <code>tk.id == ...</code> and <code>strcmp(...)</code>.
+</p>
+
+<h3>The Delay Technique for Right-Recursive Rules</h3>
+<pre><code><span class="cmt">// &lt;exp&gt; -&gt; &lt;M&gt; ** &lt;exp&gt; | &lt;M&gt; // &lt;exp&gt; | &lt;M&gt;</span>
+<span class="kw">static</span> Node *<span class="fn">expr</span>(<span class="kw">void</span>) {
+    Node *n = <span class="fn">newNode</span>(<span class="str">"exp"</span>);
+    <span class="fn">addChild</span>(n, <span class="fn">M</span>());                    <span class="cmt">// always parse &lt;M&gt; first</span>
+    <span class="kw">if</span> (<span class="fn">isOp</span>(<span class="str">"**"</span>) || <span class="fn">isOp</span>(<span class="str">"//"</span>)) {   <span class="cmt">// then "delay" decision: is there an operator?</span>
+        <span class="fn">addToken</span>(n, tk);
+        <span class="fn">consume</span>();
+        <span class="fn">addChild</span>(n, <span class="fn">expr</span>());
+    }
+    <span class="kw">return</span> n;
+}
+</code></pre>
+<p>
+  The grammar for expressions is right-recursive. A pure LL(1) approach would require
+  left-factoring the grammar into <code>expr' → op M expr' | ε</code>. Instead, this uses
+  the "delay technique": parse the mandatory left part first, <em>then</em> peek at the lookahead
+  to decide whether the optional right part is present. This produces the same parse tree
+  without rewriting the grammar, and it is the approach recommended by the course docs.
+</p>
+
+<div class="docref">
+  <strong>P4 Suggestions → docs/P4 Suggestions_*.pdf</strong>
+  The suggestion document recommends the delay technique for all right-recursive expression
+  rules (<code>exp</code>, <code>M</code>, <code>N</code>). Code generation relies on the
+  resulting AST shape — specifically on <code>n-&gt;tokenCount</code> and the number of children
+  — to decide which code pattern to emit.
+</div>
+
+<h3>The <code>= =</code> Relational Operator</h3>
+<pre><code><span class="kw">static</span> Node *<span class="fn">relational</span>(<span class="kw">void</span>) {
+    Node *n = <span class="fn">newNode</span>(<span class="str">"relational"</span>);
+    <span class="kw">if</span> (tk.id == OpTk) {
+        <span class="fn">addToken</span>(n, tk); <span class="fn">consume</span>();        <span class="cmt">// ?le ?ge etc.</span>
+    } <span class="kw">else if</span> (<span class="fn">isOpDel</span>(<span class="str">"="</span>)) {
+        <span class="fn">addToken</span>(n, tk); <span class="fn">consume</span>();        <span class="cmt">// first '='</span>
+        <span class="kw">if</span> (!<span class="fn">isOpDel</span>(<span class="str">"="</span>)) <span class="fn">error</span>(<span class="str">"second '='"</span>);
+        <span class="fn">addToken</span>(n, tk); <span class="fn">consume</span>();        <span class="cmt">// second '='</span>
+    } ...
+}
+</code></pre>
+<p>
+  Equality is written as <code>= =</code> (two tokens with whitespace). The lexer produces two
+  <code>OpDelTk</code> tokens each containing <code>"="</code>. Both are stored on the
+  <code>relational</code> node. Code gen detects this case by checking
+  <code>n-&gt;tokenCount == 2</code>, which signals that two branch instructions are needed
+  (see <a href="#cg-relop">Relational Branches</a>).
+</p>
+</section>
+
+<!-- ══════════════ SEMANTICS ══════════════ -->
+<section id="semantics">
+<h2>semantics.c — Static Semantic Analysis</h2>
+
+<p>
+  The semantic pass does a single preorder walk of the AST enforcing three rules from the
+  language spec:
+</p>
+
+<ol style="margin: 12px 0 12px 24px;">
+  <li>Every identifier used must have been declared — error.</li>
+  <li>No identifier may be declared more than once — error.</li>
+  <li>Every declared identifier must be used at least once — warning.</li>
+</ol>
+
+<h3>Symbol Table</h3>
+<pre><code><span class="pp">#define STV_MAX 100</span>
+
+<span class="kw">typedef struct</span> {
+    <span class="kw">char</span> name[<span class="num">9</span>];   <span class="cmt">// 8 chars + NUL, matching TOKEN_INSTANCE_MAX</span>
+    <span class="kw">int</span>  used;
+} STVEntry;
+
+<span class="kw">static</span> STVEntry stv[STV_MAX];
+<span class="kw">static int</span>      stv_size = <span class="num">0</span>;
+</code></pre>
+<p>
+  The symbol table is a flat array — no hash table, no scoping. EXT has no nested scope semantics
+  beyond the fact that declarations in a block are accessible throughout the block. The project
+  spec explicitly allows a flat table with a maximum of 100 entries.
+</p>
+
+<div class="warn">
+  <strong>Scope limitation:</strong> Because the symbol table is flat and never shrinks, an
+  identifier declared in an inner block technically stays in the table for the rest of the
+  program. The spec says this is acceptable for P3/P4; a production compiler would use a
+  scope stack.
+</div>
+
+<h3>The Walk</h3>
+<pre><code><span class="kw">static void</span> <span class="fn">walk</span>(Node *n) {
+    <span class="kw">if</span> (!n) <span class="kw">return</span>;
+
+    <span class="kw">if</span> (<span class="fn">isDefNode</span>(n-&gt;label)) {     <span class="cmt">// "vars" or "varList" → declaration</span>
+        <span class="kw">for</span> (i ...) <span class="kw">if</span> (IDTk) <span class="fn">insert</span>(name);
+    } <span class="kw">else</span> {                        <span class="cmt">// any other node → use site</span>
+        <span class="kw">for</span> (i ...) <span class="kw">if</span> (IDTk) <span class="fn">verify</span>(name);
+    }
+
+    <span class="kw">for</span> (i ...) <span class="fn">walk</span>(n-&gt;children[i]);  <span class="cmt">// recurse into children</span>
+}
+</code></pre>
+<p>
+  The key insight: only <code>vars</code> and <code>varList</code> nodes carry declaration
+  tokens. Every other node that holds an <code>IDTk</code> token is a use site. The walk
+  processes all tokens on a node before recursing, which means a node's own tokens are
+  checked before its subtree — effectively a preorder traversal for declarations, which
+  ensures the spec's "declared before use" rule works because all declarations appear before
+  the statement list in the grammar.
+</p>
+</section>
+
+<hr>
+
+<!-- ══════════════ CODEGEN ══════════════ -->
+<section id="codegen">
+<h2>codegen.c — Code Generation (P4 Core)</h2>
+
+<p>
+  This is the primary new module for P4. It takes the semantically-validated AST and emits
+  VM assembly. The design follows the strategy in the P4 docs: <strong>one function per AST
+  node type</strong>, each leaving its result in ACC, using temporary variables for
+  sub-expression intermediates, and collecting all variable declarations at the end of the
+  output as a flat data section.
+</p>
+
+<div class="docref">
+  <strong>Code Generation Support → docs/P4 Code Generation Support_*.pdf</strong>
+  This document is the primary reference for <code>codegen.c</code>. It defines the
+  mapping from each grammar construct to a sequence of VM instructions, the role of
+  temporaries, and the two-phase structure (instructions then data). Every function in
+  <code>codegen.c</code> corresponds to a section in this document.
+</div>
+
+<!-- ── Module State ── -->
+<section id="cg-state">
+<h3>Module State</h3>
+
+<pre><code><span class="kw">static</span> FILE *outFile;
+<span class="kw">static int</span>   tempCounter;
+<span class="kw">static int</span>   labelCounter;
+
+<span class="kw">typedef struct</span> { <span class="kw">char</span> name[<span class="num">16</span>]; <span class="kw">int</span> initVal; } VarEntry;
+<span class="kw">static</span> VarEntry varTable[<span class="num">200</span>];
+<span class="kw">static int</span>      varCount;
+</code></pre>
+
+<p>
+  All state is module-level and reset at the start of <code>codeGen()</code>. This makes the
+  function safe to call multiple times (though the compiler only calls it once). The
+  <code>varTable</code> serves double duty: it stores both <strong>user-declared variables</strong>
+  (name + initial value) and <strong>compiler-generated temporaries</strong> (name + initial 0).
+  Both end up emitted to the data section after <code>STOP</code>.
+</p>
+
+<div class="docref">
+  <strong>Storage Allocation → docs/P4 Storage Allocation Support_*.pdf</strong>
+  Defines the two-region output layout: (1) instruction region at the top, (2) data region after
+  STOP. All variables — user and compiler-generated — live in the data region as
+  <code>name initial_value</code> lines. This is exactly what <code>varTable</code> accumulates.
+</div>
+</section>
+
+<!-- ── Temporaries ── -->
+<section id="cg-temps">
+<h3>Compiler Temporaries</h3>
+
+<pre><code><span class="kw">static const char</span> *<span class="fn">newTemp</span>(<span class="kw">void</span>) {
+    <span class="fn">snprintf</span>(varTable[varCount].name, NAME_MAX, <span class="str">"t%d"</span>, tempCounter++);
+    varTable[varCount].initVal = <span class="num">0</span>;
+    <span class="kw">return</span> varTable[varCount++].name;
+}
+</code></pre>
+
+<p>
+  <code>newTemp()</code> allocates a fresh temporary — <code>t0</code>, <code>t1</code>,
+  <code>t2</code>, … — by writing it directly into <code>varTable</code> and returning a
+  pointer to the name within that table entry. The pointer is valid for the lifetime of the
+  compiler run because <code>varTable</code> is a static array that never moves.
+</p>
+
+<div class="warn">
+  <strong>Design tradeoff:</strong> Temporaries are never reused. Every subexpression gets its
+  own slot. This wastes memory slots but avoids the complexity of a liveness analysis / register
+  allocator. The P4 docs explicitly allow this approach.
+</div>
+
+<p>
+  There is a subtle pattern used throughout the expression generators because the VM's arithmetic
+  instructions require the operand to already be in memory, not in ACC:
+</p>
+
+<pre><code><span class="cmt">// To compute A + B:</span>
+<span class="asm-instr">LOAD</span>  <span class="asm-op">A</span>          <span class="cmt">// ACC = A</span>
+<span class="asm-instr">STORE</span> <span class="asm-op">t0</span>         <span class="cmt">// t0 = A  (spill so B can use ACC)</span>
+<span class="asm-instr">LOAD</span>  <span class="asm-op">B</span>          <span class="cmt">// ACC = B</span>
+<span class="asm-instr">ADD</span>   <span class="asm-op">t0</span>         <span class="cmt">// ACC = B + t0 = B + A ✓</span>
+</code></pre>
+</section>
+
+<!-- ── Labels ── -->
+<section id="cg-labels">
+<h3>Labels</h3>
+
+<pre><code><span class="kw">static const char</span> *<span class="fn">newLabel</span>(<span class="kw">void</span>) {
+    <span class="kw">static char</span> buf[NAME_MAX];
+    <span class="fn">snprintf</span>(buf, NAME_MAX, <span class="str">"L%d"</span>, labelCounter++);
+    <span class="kw">return</span> buf;
+}
+</code></pre>
+
+<p>
+  Labels are named <code>L0</code>, <code>L1</code>, … and are used exclusively for branch
+  targets in <code>cond</code> and <code>loop</code> constructs. Unlike <code>newTemp</code>,
+  <code>newLabel</code> reuses a single static buffer — this is safe because every caller
+  copies the returned string into a local array before calling <code>newLabel</code> again.
+</p>
+</section>
+
+<!-- ── Var Collection ── -->
+<section id="cg-vars">
+<h3>Variable Collection</h3>
+
+<pre><code><span class="kw">static void</span> <span class="fn">genVars</span>(Node *n) {
+    <span class="kw">if</span> (!n) <span class="kw">return</span>;
+    <span class="kw">if</span> (strcmp(n-&gt;label, <span class="str">"vars"</span>) == <span class="num">0</span>) {
+        <span class="kw">if</span> (n-&gt;tokenCount &gt;= <span class="num">2</span>)
+            <span class="fn">registerVar</span>(n-&gt;tokens[<span class="num">0</span>].instance, atoi(n-&gt;tokens[<span class="num">1</span>].instance));
+        <span class="kw">if</span> (n-&gt;childCount &gt; <span class="num">0</span>) <span class="fn">genVars</span>(n-&gt;children[<span class="num">0</span>]);
+    } <span class="kw">else if</span> (strcmp(n-&gt;label, <span class="str">"varList"</span>) == <span class="num">0</span>) {
+        <span class="kw">if</span> (n-&gt;tokenCount &gt;= <span class="num">2</span>)
+            <span class="fn">registerVar</span>(n-&gt;tokens[<span class="num">0</span>].instance, atoi(n-&gt;tokens[<span class="num">1</span>].instance));
+        <span class="kw">if</span> (n-&gt;childCount &gt; <span class="num">0</span>) <span class="fn">genVars</span>(n-&gt;children[<span class="num">0</span>]);
+    }
+}
+</code></pre>
+
+<p>
+  <code>genVars</code> traverses a <code>vars</code>/<code>varList</code> subtree and calls
+  <code>registerVar</code> for each declared identifier, capturing the initial integer value from
+  the AST. It does <em>not</em> emit any instructions — declarations produce no code, only data
+  section entries. This matches the VM model where storage is pre-allocated, not pushed at
+  runtime.
+</p>
+
+<div class="docref">
+  <strong>Storage Allocation → docs/P4 Storage Allocation Support_*.pdf</strong>
+  Variable declarations in EXT always carry an initializer (e.g., <code>int x = 5</code>). The
+  VM's data section format <code>name init_value</code> maps directly to this: the identifier
+  and its integer initializer are both stored in the AST tokens and retrieved here by
+  <code>tokens[0]</code> (name) and <code>tokens[1]</code> (value).
+</div>
+</section>
+
+<!-- ── Expression Generation ── -->
+<section id="cg-expr">
+<h3>Expression Generation</h3>
+
+<p>
+  Expressions are generated bottom-up. Each of the four expression functions
+  (<code>genR</code>, <code>genN</code>, <code>genM</code>, <code>genExp</code>)
+  leaves its result in ACC. The calling function can then immediately <code>STORE</code>
+  it to a temporary if it needs the value later.
+</p>
+
+<h4>genR — Atoms</h4>
+<pre><code><span class="kw">static void</span> <span class="fn">genR</span>(Node *n) {
+    <span class="kw">if</span> (n-&gt;childCount == <span class="num">1</span>)
+        <span class="fn">genExp</span>(n-&gt;children[<span class="num">0</span>]);          <span class="cmt">// parenthesized: ( exp )</span>
+    <span class="kw">else</span>
+        emit(<span class="str">"LOAD %s"</span>, n-&gt;tokens[<span class="num">0</span>].instance);  <span class="cmt">// identifier or integer</span>
+}
+</code></pre>
+<p>
+  An <code>R</code> node is either a parenthesized expression (recurse) or a leaf — an identifier
+  or integer literal. The VM's <code>LOAD</code> instruction accepts both variable names and
+  numeric literals, so both cases produce the same instruction.
+</p>
+
+<h4>genN — Unary and Binary Minus</h4>
+<pre><code><span class="kw">static void</span> <span class="fn">genN</span>(Node *n) {
+    <span class="kw">if</span> (n-&gt;tokenCount == <span class="num">0</span>) { <span class="fn">genR</span>(n-&gt;children[<span class="num">0</span>]); <span class="kw">return</span>; }
+
+    <span class="kw">if</span> (strcmp(n-&gt;children[<span class="num">0</span>]-&gt;label, <span class="str">"N"</span>) == <span class="num">0</span>) {
+        <span class="cmt">// Unary minus: - &lt;N&gt;</span>
+        <span class="fn">genN</span>(n-&gt;children[<span class="num">0</span>]);           <span class="cmt">// ACC = N</span>
+        <span class="fn">strcpy</span>(t, <span class="fn">newTemp</span>());
+        emit(<span class="str">"STORE %s"</span>, t);             <span class="cmt">// t = N</span>
+        emit(<span class="str">"LOAD 0"</span>);                  <span class="cmt">// ACC = 0</span>
+        emit(<span class="str">"SUB %s"</span>, t);               <span class="cmt">// ACC = 0 - N = -N</span>
+    } <span class="kw">else</span> {
+        <span class="cmt">// Binary minus: &lt;R&gt; - &lt;N&gt; needs ACC = R - N</span>
+        <span class="fn">genN</span>(n-&gt;children[<span class="num">1</span>]);           <span class="cmt">// ACC = N (RHS first)</span>
+        <span class="fn">strcpy</span>(t, <span class="fn">newTemp</span>());
+        emit(<span class="str">"STORE %s"</span>, t);             <span class="cmt">// t = N</span>
+        <span class="fn">genR</span>(n-&gt;children[<span class="num">0</span>]);           <span class="cmt">// ACC = R</span>
+        emit(<span class="str">"SUB %s"</span>, t);               <span class="cmt">// ACC = R - t = R - N ✓</span>
+    }
+}
+</code></pre>
+<p>
+  Subtraction is not commutative, so order matters. The pattern <em>evaluate RHS first, spill
+  to temp, evaluate LHS into ACC, then SUB the temp</em> produces the correct
+  <code>ACC = LHS - RHS</code> result. This same pattern repeats for division in
+  <code>genExp</code>.
+</p>
+
+<h4>genM — Addition</h4>
+<pre><code><span class="kw">static void</span> <span class="fn">genM</span>(Node *n) {
+    <span class="kw">if</span> (n-&gt;childCount == <span class="num">1</span>) { <span class="fn">genN</span>(n-&gt;children[<span class="num">0</span>]); <span class="kw">return</span>; }
+    <span class="cmt">// N + M — addition is commutative, evaluate N first</span>
+    <span class="fn">genN</span>(n-&gt;children[<span class="num">0</span>]);
+    <span class="fn">strcpy</span>(t, <span class="fn">newTemp</span>()); emit(<span class="str">"STORE %s"</span>, t);
+    <span class="fn">genM</span>(n-&gt;children[<span class="num">1</span>]);
+    emit(<span class="str">"ADD %s"</span>, t);
+}
+</code></pre>
+<p>
+  Addition is commutative so the order of evaluation doesn't affect correctness, but the code
+  still uses the spill-then-compute pattern for consistency. Either operand could be evaluated
+  first — N is chosen arbitrarily.
+</p>
+
+<h4>genExp — Multiplication and Division</h4>
+<pre><code><span class="kw">static void</span> <span class="fn">genExp</span>(Node *n) {
+    <span class="kw">if</span> (n-&gt;childCount == <span class="num">1</span>) { <span class="fn">genM</span>(n-&gt;children[<span class="num">0</span>]); <span class="kw">return</span>; }
+
+    <span class="kw">if</span> (strcmp(op, <span class="str">"**"</span>) == <span class="num">0</span>) {
+        <span class="fn">genM</span>(n-&gt;children[<span class="num">0</span>]);               <span class="cmt">// commutative: either order</span>
+        <span class="fn">strcpy</span>(t, <span class="fn">newTemp</span>()); emit(<span class="str">"STORE %s"</span>, t);
+        <span class="fn">genExp</span>(n-&gt;children[<span class="num">1</span>]);
+        emit(<span class="str">"MULT %s"</span>, t);
+    } <span class="kw">else</span> {
+        <span class="cmt">// Division: ACC = left // right — NOT commutative</span>
+        <span class="fn">genExp</span>(n-&gt;children[<span class="num">1</span>]);             <span class="cmt">// RHS first</span>
+        <span class="fn">strcpy</span>(t, <span class="fn">newTemp</span>()); emit(<span class="str">"STORE %s"</span>, t);
+        <span class="fn">genM</span>(n-&gt;children[<span class="num">0</span>]);               <span class="cmt">// LHS into ACC</span>
+        emit(<span class="str">"DIV %s"</span>, t);                  <span class="cmt">// ACC = LHS / RHS ✓</span>
+    }
+}
+</code></pre>
+</section>
+
+<!-- ── Relational Branches ── -->
+<section id="cg-relop">
+<h3>Relational Branches</h3>
+
+<pre><code><span class="kw">static const char</span> *<span class="fn">relBranchInstr</span>(Node *rel, <span class="kw">int</span> *needTwo) {
+    *needTwo = <span class="num">0</span>;
+    <span class="kw">const char</span> *op = rel-&gt;tokens[<span class="num">0</span>].instance;
+
+    <span class="kw">if</span> (rel-&gt;tokenCount == <span class="num">2</span>)         <span class="cmt">// "= =" — two tokens</span>
+        { *needTwo = <span class="num">1</span>; <span class="kw">return</span> <span class="str">"BRNEG"</span>; }
+
+    <span class="kw">if</span> (strcmp(op, <span class="str">"?ge"</span>) == <span class="num">0</span>) <span class="kw">return</span> <span class="str">"BRNEG"</span>;   <span class="cmt">// LHS - RHS &lt; 0 → NOT ?ge</span>
+    <span class="kw">if</span> (strcmp(op, <span class="str">"?le"</span>) == <span class="num">0</span>) <span class="kw">return</span> <span class="str">"BRPOS"</span>;   <span class="cmt">// LHS - RHS &gt; 0 → NOT ?le</span>
+    <span class="kw">if</span> (strcmp(op, <span class="str">"?gt"</span>) == <span class="num">0</span>) <span class="kw">return</span> <span class="str">"BRZNEG"</span>;  <span class="cmt">// LHS - RHS &lt;= 0 → NOT ?gt</span>
+    <span class="kw">if</span> (strcmp(op, <span class="str">"?lt"</span>) == <span class="num">0</span>) <span class="kw">return</span> <span class="str">"BRZPOS"</span>;  <span class="cmt">// LHS - RHS &gt;= 0 → NOT ?lt</span>
+    <span class="kw">if</span> (strcmp(op, <span class="str">"?ne"</span>) == <span class="num">0</span>) <span class="kw">return</span> <span class="str">"BRZERO"</span>;  <span class="cmt">// LHS - RHS == 0 → NOT ?ne</span>
+    <span class="kw">if</span> (strcmp(op, <span class="str">";"</span>)   == <span class="num">0</span>) <span class="kw">return</span> <span class="str">"BRZERO"</span>;  <span class="cmt">// ';' = ?ne alias</span>
+    <span class="kw">if</span> (strcmp(op, <span class="str">"?eq"</span>) == <span class="num">0</span>) { *needTwo = <span class="num">1</span>; <span class="kw">return</span> <span class="str">"BRNEG"</span>; }
+}
+</code></pre>
+
+<p>
+  The key insight: the VM doesn't have "jump if LHS ≥ RHS" — it only has
+  "jump if ACC is negative/positive/zero". The code generation strategy computes
+  <code>ACC = LHS - RHS</code> before the branch, then branches on the <em>negation</em>
+  of the condition to skip the body:
+</p>
+
+<table>
+  <thead><tr><th>Source condition</th><th>Branch (false → skip)</th><th>Condition of ACC</th></tr></thead>
+  <tbody>
+    <tr><td><code>?ge</code> (LHS ≥ RHS)</td><td><code>BRNEG</code></td><td>ACC &lt; 0 → LHS &lt; RHS → false</td></tr>
+    <tr><td><code>?le</code> (LHS ≤ RHS)</td><td><code>BRPOS</code></td><td>ACC &gt; 0 → LHS &gt; RHS → false</td></tr>
+    <tr><td><code>?gt</code> (LHS &gt; RHS)</td><td><code>BRZNEG</code></td><td>ACC ≤ 0 → LHS ≤ RHS → false</td></tr>
+    <tr><td><code>?lt</code> (LHS &lt; RHS)</td><td><code>BRZPOS</code></td><td>ACC ≥ 0 → LHS ≥ RHS → false</td></tr>
+    <tr><td><code>?ne</code> or <code>;</code></td><td><code>BRZERO</code></td><td>ACC = 0 → LHS = RHS → false</td></tr>
+    <tr><td><code>?eq</code> or <code>= =</code></td><td><code>BRNEG</code> + <code>BRPOS</code></td><td>ACC ≠ 0 → LHS ≠ RHS → false</td></tr>
+  </tbody>
+</table>
+
+<p>
+  Equality is the special case: the VM has no "branch if non-zero", so equality requires
+  <em>two</em> branch instructions — one for negative and one for positive — both jumping to
+  the exit label. <code>needTwo</code> signals this to the caller.
+</p>
+
+<div class="docref">
+  <strong>Runtime Semantics → docs/P4 Runtime Semantics_*.pdf</strong>
+  This document defines what "the condition holds" means for each relational operator in
+  terms of the ACC value after LHS - RHS. The branch-negation strategy implemented here
+  is the direct consequence: generate code that branches <em>out</em> of the body when the
+  condition is <em>false</em>.
+</div>
+</section>
+
+<!-- ── Statement Dispatch ── -->
+<section id="cg-dispatch">
+<h3>Statement Dispatch</h3>
+
+<pre><code><span class="kw">static void</span> <span class="fn">genNode</span>(Node *n) {
+    <span class="kw">if</span> (strcmp(n-&gt;label, <span class="str">"program"</span>) == <span class="num">0</span>)   { ... emit(<span class="str">"STOP"</span>); ... }
+    <span class="kw">else if</span> (strcmp(n-&gt;label, <span class="str">"block"</span>) == <span class="num">0</span>)    { ... }
+    <span class="kw">else if</span> (strcmp(n-&gt;label, <span class="str">"read"</span>) == <span class="num">0</span>)     { emit(<span class="str">"READ %s"</span>, ...); }
+    <span class="kw">else if</span> (strcmp(n-&gt;label, <span class="str">"print"</span>) == <span class="num">0</span>)    { genExp(...); STORE t; WRITE t; }
+    <span class="kw">else if</span> (strcmp(n-&gt;label, <span class="str">"assign"</span>) == <span class="num">0</span>)   { genExp(...); STORE x; }
+    <span class="kw">else if</span> (strcmp(n-&gt;label, <span class="str">"cond"</span>) == <span class="num">0</span>)     { <span class="fn">genCondOrLoop</span>(n, <span class="num">0</span>); }
+    <span class="kw">else if</span> (strcmp(n-&gt;label, <span class="str">"loop"</span>) == <span class="num">0</span>)     { <span class="fn">genCondOrLoop</span>(n, <span class="num">1</span>); }
+    ...
+}
+</code></pre>
+
+<p>
+  The <code>print</code> statement requires a temporary even though it only needs to write a
+  value. This is because the VM's <code>WRITE</code> instruction takes a <em>memory address</em>
+  (variable name), not an ACC value. The expression is evaluated into ACC, spilled to a temp,
+  then that temp is <code>WRITE</code>n.
+</p>
+
+<h4>Cond and Loop — genCondOrLoop</h4>
+<pre><code><span class="kw">static void</span> <span class="fn">genCondOrLoop</span>(Node *n, <span class="kw">int</span> isLoop) {
+    <span class="kw">if</span> (isLoop) { loopTop = newLabel(); emit(<span class="str">"%s: NOOP"</span>, loopTop); }
+    exitLabel = <span class="fn">newLabel</span>();
+
+    <span class="fn">genExp</span>(n-&gt;children[<span class="num">1</span>]);                    <span class="cmt">// ACC = RHS of condition</span>
+    <span class="fn">strcpy</span>(t, <span class="fn">newTemp</span>()); emit(<span class="str">"STORE %s"</span>, t);
+    emit(<span class="str">"LOAD %s"</span>, n-&gt;tokens[<span class="num">0</span>].instance);    <span class="cmt">// ACC = LHS (identifier)</span>
+    emit(<span class="str">"SUB %s"</span>, t);                          <span class="cmt">// ACC = LHS - RHS</span>
+
+    brInstr = <span class="fn">relBranchInstr</span>(n-&gt;children[<span class="num">0</span>], &amp;needTwo);
+    emit(<span class="str">"%s %s"</span>, brInstr, exitLabel);
+    <span class="kw">if</span> (needTwo) emit(<span class="str">"BRPOS %s"</span>, exitLabel);
+
+    <span class="fn">genNode</span>(n-&gt;children[<span class="num">2</span>]);                   <span class="cmt">// body</span>
+
+    <span class="kw">if</span> (isLoop) emit(<span class="str">"BR %s"</span>, loopTop);        <span class="cmt">// loop: jump back</span>
+    emit(<span class="str">"%s: NOOP"</span>, exitLabel);
+}
+</code></pre>
+
+<p>
+  <code>cond</code> and <code>loop</code> share almost identical code structure. The only
+  difference is that <code>loop</code> emits a label before the condition check and an
+  unconditional <code>BR</code> back to it after the body, forming the back-edge of the loop.
+  NOOP is used at all label targets because the VM requires every label to be attached to an
+  instruction, and NOOP is a safe no-operation placeholder.
+</p>
+</section>
+
+<!-- ── Storage Layout ── -->
+<section id="cg-storage">
+<h3>Storage Layout</h3>
+
+<pre><code><span class="cmt">// In genNode for "program":</span>
+emit(<span class="str">"STOP"</span>);
+<span class="kw">for</span> (<span class="kw">int</span> i = <span class="num">0</span>; i &lt; varCount; i++)
+    emit(<span class="str">"%s %d"</span>, varTable[i].name, varTable[i].initVal);
+</code></pre>
+
+<p>
+  After the final <code>STOP</code> instruction, all variables are emitted in declaration order.
+  User variables come first (in the order <code>genVars</code> encountered them), then temporaries
+  (in the order they were created). All temporaries are initialized to 0.
+</p>
+
+<div class="docref">
+  <strong>Storage Allocation → docs/P4 Storage Allocation Support_*.pdf</strong>
+  The "data section after STOP" layout is mandated by the VM spec. The VM loader reads the
+  instructions from the top of the file and the data declarations from after STOP. Temporaries
+  must be declared here too — they are real memory slots, not CPU registers.
+</div>
+</section>
+</section>
+
+<!-- ══════════════ DRIVER ══════════════ -->
+<section id="driver">
+<h2>P4.c — Driver</h2>
+
+<pre><code><span class="kw">int</span> <span class="fn">main</span>(<span class="kw">int</span> argc, <span class="kw">char</span> *argv[]) {
+    <span class="cmt">// 1. Parse args: optional -l flag, optional basename</span>
+    <span class="cmt">// 2. Open basename.ext for input (or stdin)</span>
+    <span class="fn">lexer_init</span>(in);
+
+    <span class="kw">if</span> (lexOnly) {
+        <span class="fn">runLexer</span>();                     <span class="cmt">// lex-only mode: print tokens</span>
+    } <span class="kw">else</span> {
+        Node *tree = <span class="fn">parser</span>();          <span class="cmt">// parse → AST</span>
+        <span class="fn">staticSemantics</span>(tree);          <span class="cmt">// semantic check (errors exit here)</span>
+
+        <span class="cmt">// 3. Open basename.asm for output (or stdout)</span>
+        <span class="fn">codeGen</span>(tree, out);             <span class="cmt">// emit VM assembly</span>
+        <span class="fn">fclose</span>(out);
+        <span class="fn">freeTree</span>(tree);
+    }
+}
+</code></pre>
+
+<p>
+  The driver handles file I/O at both ends: it opens <code>basename.ext</code> for source input
+  and <code>basename.asm</code> for assembly output. If no basename is given, stdin/stdout are
+  used instead (handy for piping in tests). The <code>-l</code> flag runs the lexer only and
+  dumps tokens — useful for debugging the tokenizer independently.
+</p>
+
+<p>
+  <code>staticSemantics</code> runs before code generation. If there are semantic errors, the
+  process exits before any assembly is written — no partial output files are created for the
+  error case. The tree is always freed before exiting.
+</p>
+</section>
+
+<hr>
+
+<!-- ══════════════ EXAMPLES ══════════════ -->
+<section id="ex-output">
+<h2>Example: Print a Literal</h2>
+
+<div class="two-col">
+  <div>
+    <div class="col-label">Source (test_good1.ext)</div>
+    <pre><code>go
+{ output 1 :
+}
+exit</code></pre>
+  </div>
+  <div>
+    <div class="col-label">Output (test_good1.asm)</div>
+    <pre><code><span class="asm-instr">LOAD</span>  <span class="asm-op">1</span>
+<span class="asm-instr">STORE</span> <span class="asm-op">t0</span>
+<span class="asm-instr">WRITE</span> <span class="asm-op">t0</span>
+<span class="asm-instr">STOP</span>
+<span class="asm-label">t0</span> 0</code></pre>
+  </div>
+</div>
+
+<p>
+  The <code>output</code> statement calls <code>genExp</code> → <code>genM</code> → <code>genN</code>
+  → <code>genR</code> which emits <code>LOAD 1</code> (the integer literal goes directly into ACC).
+  The <code>print</code> handler then spills ACC to a temp (<code>STORE t0</code>) and
+  <code>WRITE</code>s it. <code>t0</code> is declared in the data section with initial value 0.
+</p>
+</section>
+
+<section id="ex-arith">
+<h2>Example: Arithmetic</h2>
+
+<div class="two-col">
+  <div>
+    <div class="col-label">Source (test_good12.ext)</div>
+    <pre><code>go int x = 10 :
+{ scan x :
+  output x ** 2 :
+  output x // 3 :
+  output - x :
+}
+exit</code></pre>
+  </div>
+  <div>
+    <div class="col-label">Output (test_good12.asm)</div>
+    <pre><code><span class="asm-instr">READ</span>  <span class="asm-op">x</span>
+<span class="asm-instr">LOAD</span>  <span class="asm-op">x</span>
+<span class="asm-instr">STORE</span> <span class="asm-op">t0</span>
+<span class="asm-instr">LOAD</span>  <span class="asm-op">2</span>
+<span class="asm-instr">MULT</span>  <span class="asm-op">t0</span>       <span class="cmt">← x ** 2</span>
+<span class="asm-instr">STORE</span> <span class="asm-op">t1</span>
+<span class="asm-instr">WRITE</span> <span class="asm-op">t1</span>
+<span class="asm-instr">LOAD</span>  <span class="asm-op">3</span>
+<span class="asm-instr">STORE</span> <span class="asm-op">t2</span>
+<span class="asm-instr">LOAD</span>  <span class="asm-op">x</span>
+<span class="asm-instr">DIV</span>   <span class="asm-op">t2</span>       <span class="cmt">← x // 3</span>
+<span class="asm-instr">STORE</span> <span class="asm-op">t3</span>
+<span class="asm-instr">WRITE</span> <span class="asm-op">t3</span>
+<span class="asm-instr">LOAD</span>  <span class="asm-op">x</span>
+<span class="asm-instr">STORE</span> <span class="asm-op">t4</span>
+<span class="asm-instr">LOAD</span>  <span class="asm-op">0</span>
+<span class="asm-instr">SUB</span>   <span class="asm-op">t4</span>       <span class="cmt">← 0 - x = -x</span>
+<span class="asm-instr">STORE</span> <span class="asm-op">t5</span>
+<span class="asm-instr">WRITE</span> <span class="asm-op">t5</span>
+<span class="asm-instr">STOP</span></code></pre>
+  </div>
+</div>
+
+<p>
+  For <code>x // 3</code> (division), the RHS (3) is evaluated first into ACC, spilled to
+  <code>t2</code>, then the LHS (x) is loaded, and <code>DIV t2</code> produces
+  <code>ACC = x / 3</code> — demonstrating the RHS-first pattern for non-commutative operations.
+  Unary minus is implemented as <code>0 - x</code> using the LOAD 0 / SUB trick.
+</p>
+</section>
+
+<section id="ex-cond">
+<h2>Example: Conditional</h2>
+
+<div class="two-col">
+  <div>
+    <div class="col-label">Source (test_good8.ext)</div>
+    <pre><code>go int x = 1 x1 = 2 :
+{ scan x :
+  cond [ x ?ge 0 ]
+  output x :
+}
+exit</code></pre>
+  </div>
+  <div>
+    <div class="col-label">Output (test_good8.asm)</div>
+    <pre><code><span class="asm-instr">READ</span>  <span class="asm-op">x</span>
+<span class="asm-instr">LOAD</span>  <span class="asm-op">0</span>
+<span class="asm-instr">STORE</span> <span class="asm-op">t0</span>      <span class="cmt">← RHS = 0</span>
+<span class="asm-instr">LOAD</span>  <span class="asm-op">x</span>       <span class="cmt">← LHS</span>
+<span class="asm-instr">SUB</span>   <span class="asm-op">t0</span>      <span class="cmt">← ACC = x - 0</span>
+<span class="asm-instr">BRNEG</span> <span class="asm-label">L0</span>     <span class="cmt">← skip if x &lt; 0 (condition ?ge fails)</span>
+<span class="asm-instr">LOAD</span>  <span class="asm-op">x</span>
+<span class="asm-instr">STORE</span> <span class="asm-op">t1</span>
+<span class="asm-instr">WRITE</span> <span class="asm-op">t1</span>
+<span class="asm-label">L0</span>: <span class="asm-instr">NOOP</span>
+<span class="asm-instr">STOP</span></code></pre>
+  </div>
+</div>
+
+<p>
+  The <code>cond</code> condition is <code>x ?ge 0</code>. After computing
+  <code>ACC = x - 0</code>, the branch is <code>BRNEG L0</code> — meaning "if x−0 is negative,
+  skip the body." If x is ≥ 0, the branch is not taken, the body executes, then falls through
+  to <code>L0: NOOP</code>.
+</p>
+</section>
+
+<section id="ex-loop">
+<h2>Example: Loop</h2>
+
+<div class="two-col">
+  <div>
+    <div class="col-label">Source (test_good11.ext, loop portion)</div>
+    <pre><code>loop [ x ; 0 ]
+{ set x = x - 1 :
+}</code></pre>
+  </div>
+  <div>
+    <div class="col-label">Generated assembly</div>
+    <pre><code><span class="asm-label">L1</span>: <span class="asm-instr">NOOP</span>        <span class="cmt">← loop top</span>
+<span class="asm-instr">LOAD</span>  <span class="asm-op">0</span>
+<span class="asm-instr">STORE</span> <span class="asm-op">t2</span>
+<span class="asm-instr">LOAD</span>  <span class="asm-op">x</span>
+<span class="asm-instr">SUB</span>   <span class="asm-op">t2</span>       <span class="cmt">← x - 0</span>
+<span class="asm-instr">BRZERO</span> <span class="asm-label">L2</span>    <span class="cmt">← exit when x = 0 (condition ; = ?ne fails)</span>
+<span class="asm-instr">LOAD</span>  <span class="asm-op">1</span>
+<span class="asm-instr">STORE</span> <span class="asm-op">t3</span>
+<span class="asm-instr">LOAD</span>  <span class="asm-op">x</span>
+<span class="asm-instr">SUB</span>   <span class="asm-op">t3</span>
+<span class="asm-instr">STORE</span> <span class="asm-op">x</span>       <span class="cmt">← x = x - 1</span>
+<span class="asm-instr">BR</span>    <span class="asm-label">L1</span>      <span class="cmt">← back-edge</span>
+<span class="asm-label">L2</span>: <span class="asm-instr">NOOP</span>        <span class="cmt">← loop exit</span></code></pre>
+  </div>
+</div>
+
+<p>
+  The <code>;</code> relational operator is an alias for <code>?ne</code> (not equal). The loop
+  continues while <code>x ≠ 0</code>, so it exits when <code>x = 0</code>, which is when
+  <code>ACC = x - 0 = 0</code>, triggering <code>BRZERO</code>. The back-edge <code>BR L1</code>
+  is emitted only for <code>loop</code>, not <code>cond</code>.
+</p>
+</section>
+
+<section id="ex-equality">
+<h2>Example: Equality (<code>= =</code>) — Two Branches</h2>
+
+<div class="two-col">
+  <div>
+    <div class="col-label">Source</div>
+    <pre><code>cond [ x = = 0 ]
+output x :</code></pre>
+  </div>
+  <div>
+    <div class="col-label">Generated assembly</div>
+    <pre><code><span class="asm-instr">LOAD</span>  <span class="asm-op">0</span>
+<span class="asm-instr">STORE</span> <span class="asm-op">t0</span>
+<span class="asm-instr">LOAD</span>  <span class="asm-op">x</span>
+<span class="asm-instr">SUB</span>   <span class="asm-op">t0</span>
+<span class="asm-instr">BRNEG</span> <span class="asm-label">L0</span>    <span class="cmt">← if x &lt; 0, not equal → skip</span>
+<span class="asm-instr">BRPOS</span> <span class="asm-label">L0</span>    <span class="cmt">← if x &gt; 0, not equal → skip</span>
+<span class="cmt">... body (executes only when x = 0) ...</span>
+<span class="asm-label">L0</span>: <span class="asm-instr">NOOP</span></code></pre>
+  </div>
+</div>
+
+<p>
+  The VM has no single "branch if non-zero" instruction. Equality is synthesized with two branches:
+  one for negative (not equal) and one for positive (not equal). Only when ACC is exactly zero
+  (LHS = RHS) do both branches fail, letting execution fall through to the body.
+</p>
+</section>
+
+<hr>
+
+<!-- ══════════════ GRAMMAR ══════════════ -->
+<section id="grammar">
+<h2>Grammar Reference</h2>
+
+<pre><code>&lt;program&gt;    -&gt; <span class="kw">go</span> &lt;vars&gt; &lt;block&gt; <span class="kw">exit</span>
+&lt;vars&gt;       -&gt; empty | <span class="kw">int</span> identifier <span class="op">=</span> integer &lt;varList&gt; <span class="op">:</span>
+&lt;varList&gt;    -&gt; identifier <span class="op">=</span> integer &lt;varList&gt; | empty
+&lt;block&gt;      -&gt; <span class="op">{</span> &lt;vars&gt; &lt;stats&gt; <span class="op">}</span>
+&lt;stats&gt;      -&gt; &lt;stat&gt; &lt;mStat&gt;
+&lt;mStat&gt;      -&gt; empty | &lt;stat&gt; &lt;mStat&gt;
+&lt;stat&gt;       -&gt; &lt;read&gt; | &lt;print&gt; | &lt;block&gt; | &lt;cond&gt; | &lt;loop&gt; | &lt;assign&gt;
+&lt;read&gt;       -&gt; <span class="kw">scan</span> identifier <span class="op">:</span>
+&lt;print&gt;      -&gt; <span class="kw">output</span> &lt;exp&gt; <span class="op">:</span>
+&lt;cond&gt;       -&gt; <span class="kw">cond</span> <span class="op">[</span> identifier &lt;relational&gt; &lt;exp&gt; <span class="op">]</span> &lt;stat&gt;
+&lt;loop&gt;       -&gt; <span class="kw">loop</span> <span class="op">[</span> identifier &lt;relational&gt; &lt;exp&gt; <span class="op">]</span> &lt;stat&gt;
+&lt;assign&gt;     -&gt; <span class="kw">set</span> identifier <span class="op">=</span> &lt;exp&gt; <span class="op">:</span>
+&lt;relational&gt; -&gt; <span class="op">?le</span> | <span class="op">?ge</span> | <span class="op">?lt</span> | <span class="op">?gt</span> | <span class="op">?ne</span> | <span class="op">?eq</span> | <span class="op">= =</span> | <span class="op">;</span>
+&lt;exp&gt;        -&gt; &lt;M&gt; <span class="op">**</span> &lt;exp&gt; | &lt;M&gt; <span class="op">//</span> &lt;exp&gt; | &lt;M&gt;
+&lt;M&gt;          -&gt; &lt;N&gt; <span class="op">+</span> &lt;M&gt; | &lt;N&gt;
+&lt;N&gt;          -&gt; &lt;R&gt; <span class="op">-</span> &lt;N&gt; | <span class="op">-</span> &lt;N&gt; | &lt;R&gt;
+&lt;R&gt;          -&gt; <span class="op">(</span> &lt;exp&gt; <span class="op">)</span> | identifier | integer</code></pre>
+</section>
+
+<!-- ══════════════ INST SET ══════════════ -->
+<section id="instset">
+<h2>VM Instruction Set</h2>
+
+<div class="docref">
+  <strong>Complete reference → docs/VM_Language.pdf</strong>
+  All instructions and their exact semantics are defined in this document. The table below
+  is a practical summary derived from what <code>codegen.c</code> actually emits.
+</div>
+
+<table>
+  <thead><tr><th>Category</th><th>Instruction</th><th>Effect on ACC / Memory</th></tr></thead>
+  <tbody>
+    <tr><td rowspan="2">Data</td><td><code>LOAD x</code></td><td>ACC ← mem[x] (x can be a variable name or integer literal)</td></tr>
+    <tr><td><code>STORE x</code></td><td>mem[x] ← ACC</td></tr>
+    <tr><td rowspan="4">Arithmetic</td><td><code>ADD x</code></td><td>ACC ← ACC + mem[x]</td></tr>
+    <tr><td><code>SUB x</code></td><td>ACC ← ACC − mem[x]</td></tr>
+    <tr><td><code>MULT x</code></td><td>ACC ← ACC × mem[x]</td></tr>
+    <tr><td><code>DIV x</code></td><td>ACC ← ACC ÷ mem[x]</td></tr>
+    <tr><td rowspan="2">I/O</td><td><code>READ x</code></td><td>mem[x] ← next integer from stdin</td></tr>
+    <tr><td><code>WRITE x</code></td><td>print mem[x] to stdout</td></tr>
+    <tr><td rowspan="6">Branch</td><td><code>BR L</code></td><td>unconditional jump to label L</td></tr>
+    <tr><td><code>BRNEG L</code></td><td>jump to L if ACC &lt; 0</td></tr>
+    <tr><td><code>BRPOS L</code></td><td>jump to L if ACC &gt; 0</td></tr>
+    <tr><td><code>BRZERO L</code></td><td>jump to L if ACC = 0</td></tr>
+    <tr><td><code>BRZNEG L</code></td><td>jump to L if ACC ≤ 0</td></tr>
+    <tr><td><code>BRZPOS L</code></td><td>jump to L if ACC ≥ 0</td></tr>
+    <tr><td rowspan="2">Control</td><td><code>STOP</code></td><td>halt execution</td></tr>
+    <tr><td><code>NOOP</code></td><td>no operation (used as label targets)</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ══════════════ ERRORS ══════════════ -->
+<section id="errors">
+<h2>Error Messages</h2>
+
+<table>
+  <thead><tr><th>Phase</th><th>Message format</th><th>Exit code</th></tr></thead>
+  <tbody>
+    <tr><td>Lexer</td><td><code>LEXICAL ERROR: &lt;detail&gt; line &lt;n&gt;</code></td><td>1</td></tr>
+    <tr><td>Parser</td><td><code>SYNTAX ERROR: expected &lt;X&gt;, got '&lt;Y&gt;' (line &lt;n&gt;)</code></td><td>1</td></tr>
+    <tr><td>Semantics</td><td><code>SEMANTIC ERROR: '&lt;name&gt;' declared more than once</code></td><td>1</td></tr>
+    <tr><td>Semantics</td><td><code>SEMANTIC ERROR: '&lt;name&gt;' used but not defined</code></td><td>1</td></tr>
+    <tr><td>Semantics</td><td><code>WARNING: '&lt;name&gt;' defined but never used</code></td><td>0</td></tr>
+    <tr><td>CodeGen</td><td><code>codegen: variable table full</code></td><td>1</td></tr>
+    <tr><td>CodeGen</td><td><code>codegen: unknown relational operator '&lt;op&gt;'</code></td><td>1</td></tr>
+  </tbody>
+</table>
+
+<p>
+  All error messages go to <code>stderr</code>. Only the "defined but never used" warning
+  exits with code 0; all errors exit with code 1. This matches the project spec's requirement
+  that warnings are non-fatal.
+</p>
+</section>
+
+</main>
+</body>
+</html>

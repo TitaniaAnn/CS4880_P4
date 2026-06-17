@@ -4,39 +4,44 @@
 
 #include "semantics.h"
 
-#define STV_MAX 100
+#define STV_MAX 100   /* flat symbol table capacity (no scoping) */
 
+/* One symbol-table entry: a declared variable and whether it was ever used. */
 typedef struct {
-    char name[9];
-    int  used;
+    char name[9];   /* identifier text (8 significant chars + NUL) */
+    int  used;      /* set when the variable is referenced         */
 } STVEntry;
 
-static STVEntry stv[STV_MAX];
-static int      stv_size = 0;
+static STVEntry stv[STV_MAX];   /* the symbol table        */
+static int      stv_size = 0;   /* number of entries in use */
 
+/* Record a declaration. Re-declaring a name is a fatal error (rule: a
+   variable may be defined at most once). */
 static void insert(const char *name)
 {
-    for (int i = 0; i < stv_size; i++) {
+    for (int i = 0; i < stv_size; i++) {            /* scan for a clash   */
         if (strcmp(stv[i].name, name) == 0) {
             fprintf(stderr, "SEMANTIC ERROR: '%s' declared more than once\n", name);
             exit(1);
         }
     }
-    if (stv_size == STV_MAX) {
+    if (stv_size == STV_MAX) {                       /* table exhausted   */
         fprintf(stderr, "SEMANTIC ERROR: variable table full (max %d)\n", STV_MAX);
         exit(1);
     }
     strncpy(stv[stv_size].name, name, sizeof(stv[stv_size].name) - 1);
     stv[stv_size].name[sizeof(stv[stv_size].name) - 1] = '\0';
-    stv[stv_size].used = 0;
+    stv[stv_size].used = 0;                           /* not yet used     */
     stv_size++;
 }
 
+/* Record a use. Referencing an undeclared name is a fatal error (rule:
+   defined before use); finding it marks the entry as used. */
 static void verify(const char *name)
 {
     for (int i = 0; i < stv_size; i++) {
         if (strcmp(stv[i].name, name) == 0) {
-            stv[i].used = 1;
+            stv[i].used = 1;                          /* mark referenced  */
             return;
         }
     }
@@ -44,6 +49,8 @@ static void verify(const char *name)
     exit(1);
 }
 
+/* After the walk, warn about any declared-but-never-used variables
+   (a warning only — does not stop compilation). */
 static void checkVars(void)
 {
     for (int i = 0; i < stv_size; i++) {
@@ -52,20 +59,25 @@ static void checkVars(void)
     }
 }
 
+/* Nodes whose identifier tokens are *declarations* rather than *uses*. */
 static int isDefNode(const char *label)
 {
     return strcmp(label, "vars") == 0 || strcmp(label, "varList") == 0;
 }
 
+/* Single postorder-ish walk: declaration nodes insert their identifiers,
+   all other nodes treat their identifiers as uses, then recurse. */
 static void walk(Node *n)
 {
     if (!n) return;
 
     if (isDefNode(n->label)) {
+        /* identifiers here are being declared */
         for (int i = 0; i < n->tokenCount; i++)
             if (n->tokens[i].id == IDTk)
                 insert(n->tokens[i].instance);
     } else {
+        /* identifiers anywhere else are being used */
         for (int i = 0; i < n->tokenCount; i++)
             if (n->tokens[i].id == IDTk)
                 verify(n->tokens[i].instance);
@@ -75,6 +87,7 @@ static void walk(Node *n)
         walk(n->children[i]);
 }
 
+/* Entry point: reset the table, walk the tree, then emit unused warnings. */
 void staticSemantics(Node *root)
 {
     stv_size = 0;

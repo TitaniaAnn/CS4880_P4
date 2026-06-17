@@ -8,6 +8,8 @@
 #include "token.h"
 
 /* ── global current token ─────────────────────────────────────────── */
+/* One token of lookahead shared by every rule: `tk` always holds the next
+   unconsumed token. consume() advances it. */
 static Token tk;
 
 /* ── forward declarations for mutual recursion ────────────────────── */
@@ -30,6 +32,7 @@ static Node *N(void);
 static Node *R(void);
 
 /* ── helpers ──────────────────────────────────────────────────────── */
+/* Report a syntax error against the current token and abort. */
 static void error(const char *expected)
 {
     fprintf(stderr, "SYNTAX ERROR: expected %s, got '%s' (line %d)\n",
@@ -37,23 +40,29 @@ static void error(const char *expected)
     exit(1);
 }
 
+/* Advance the lookahead to the next token. */
 static void consume(void) { tk = getNextToken(); }
 
+/* Is the current token the keyword `kw`? */
 static int isKW(const char *kw)
 {
     return tk.id == KW_tk && strcmp(tk.instance, kw) == 0;
 }
 
+/* Is the current token the single-char operator/delimiter `op`? */
 static int isOpDel(const char *op)
 {
     return tk.id == OpDelTk && strcmp(tk.instance, op) == 0;
 }
 
+/* Is the current token the multi-char operator `op`? */
 static int isOp(const char *op)
 {
     return tk.id == OpTk && strcmp(tk.instance, op) == 0;
 }
 
+/* True when the current token can begin a <stat> — used to decide whether
+   <mStat> takes another statement or its empty production. */
 static int isStatFirst(void)
 {
     return isKW("scan") || isKW("output") || isKW("cond") ||
@@ -237,16 +246,16 @@ static Node *assign(void)
 static Node *relational(void)
 {
     Node *n = newNode("relational");
-    if (tk.id == OpTk) {
+    if (tk.id == OpTk) {                 /* one of the ?xx operators       */
         addToken(n, tk);
         consume();
-    } else if (isOpDel("=")) {
+    } else if (isOpDel("=")) {           /* equality is written as two '=' */
         addToken(n, tk);
         consume();
         if (!isOpDel("=")) error("second '=' in '= ='");
-        addToken(n, tk);
+        addToken(n, tk);                 /* node ends up with 2 tokens     */
         consume();
-    } else if (isOpDel(";")) {
+    } else if (isOpDel(";")) {           /* ';' is the not-equal operator  */
         addToken(n, tk);
         consume();
     } else {
@@ -255,20 +264,23 @@ static Node *relational(void)
     return n;
 }
 
-/* <exp> -> <M> ** <exp> | <M> // <exp> | <M>   (delay technique) */
+/* <exp> -> <M> ** <exp> | <M> // <exp> | <M>
+   "Delay technique": parse the first <M>, and only if an operator follows
+   do we attach it plus the right operand. Right recursion makes ** and //
+   right-associative. */
 static Node *expr(void)
 {
     Node *n = newNode("exp");
-    addChild(n, M());
-    if (isOp("**") || isOp("//")) {
-        addToken(n, tk);
+    addChild(n, M());                    /* left operand (always present)  */
+    if (isOp("**") || isOp("//")) {      /* optional operator + right side */
+        addToken(n, tk);                 /* remember which operator        */
         consume();
         addChild(n, expr());
     }
     return n;
 }
 
-/* <M> -> <N> + <M> | <N>   (delay technique) */
+/* <M> -> <N> + <M> | <N>   (delay technique; right-associative '+') */
 static Node *M(void)
 {
     Node *n = newNode("M");
@@ -281,17 +293,19 @@ static Node *M(void)
     return n;
 }
 
-/* <N> -> - <N> | <R> - <N> | <R>   (delay technique) */
+/* <N> -> - <N> | <R> - <N> | <R>
+   Leading '-' is unary negation (one child, an N); otherwise an <R>
+   optionally followed by binary '-' and another <N>. */
 static Node *N(void)
 {
     Node *n = newNode("N");
-    if (isOpDel("-")) {
+    if (isOpDel("-")) {                  /* unary minus: - <N>             */
         addToken(n, tk);
         consume();
         addChild(n, N());
     } else {
-        addChild(n, R());
-        if (isOpDel("-")) {
+        addChild(n, R());                /* <R> ...                        */
+        if (isOpDel("-")) {              /* ... optional - <N> (binary)    */
             addToken(n, tk);
             consume();
             addChild(n, N());
@@ -300,19 +314,19 @@ static Node *N(void)
     return n;
 }
 
-/* <R> -> ( <exp> ) | identifier | integer */
+/* <R> -> ( <exp> ) | identifier | integer   (the atoms of an expression) */
 static Node *R(void)
 {
     Node *n = newNode("R");
-    if (isOpDel("(")) {
+    if (isOpDel("(")) {                  /* parenthesized sub-expression   */
         consume();
         addChild(n, expr());
         if (!isOpDel(")")) error("')'");
         consume();
-    } else if (tk.id == IDTk) {
+    } else if (tk.id == IDTk) {          /* variable reference             */
         addToken(n, tk);
         consume();
-    } else if (tk.id == IntTk) {
+    } else if (tk.id == IntTk) {         /* integer literal                */
         addToken(n, tk);
         consume();
     } else {
@@ -322,11 +336,12 @@ static Node *R(void)
 }
 
 /* ── public entry point ───────────────────────────────────────────── */
+/* Prime the lookahead, parse a whole <program>, and require EOF after it. */
 Node *parser(void)
 {
     tk = getNextToken();
     Node *tree = program_rule();
-    if (tk.id != EOFTk)
+    if (tk.id != EOFTk)                  /* trailing junk after 'exit'     */
         error("end of input");
     return tree;
 }
